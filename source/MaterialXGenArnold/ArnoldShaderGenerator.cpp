@@ -4,6 +4,7 @@
 //
 
 #include <MaterialXGenArnold/ArnoldShaderGenerator.h>
+#include <MaterialXGenArnold/Nodes/ImageNodeArnold.h>
 #include <MaterialXGenShader/Nodes/BsdfNodes.h>
 
 namespace MaterialX
@@ -12,8 +13,9 @@ namespace MaterialX
 const string ArnoldShaderGenerator::TARGET = "arnold";
 
 
-ArnoldShaderGenerator::ArnoldShaderGenerator()
-    : OslShaderGenerator()
+ArnoldShaderGenerator::ArnoldShaderGenerator(bool writeImageNodeColorSpace)
+    : _writeImageNodeColorSpace(writeImageNodeColorSpace),
+      OslShaderGenerator()
 {
     const StringSet reservedWords = { "metal", "sheen", "bssrdf", "empirical_bssrdf", "randomwalk_bssrdf", 
                                       "volume_absorption", "volume_emission", "volume_henyey_greenstein", 
@@ -32,6 +34,8 @@ ArnoldShaderGenerator::ArnoldShaderGenerator()
 
     // <!-- <sheen_bsdf> -->
     registerImplementation("IM_sheen_bsdf_" + ArnoldShaderGenerator::TARGET, SheenBsdfNode::create);
-}
 
+    // <!-- <image> -->
+    registerImplementation("IM_image_color3_" + ArnoldShaderGenerator::TARGET, ImageNodeArnold::create);
+    registerImplementation("IM_image_color4_" + ArnoldShaderGenerator::TARGET, ImageNodeArnold::create);}
 }

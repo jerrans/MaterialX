@@ -41,9 +41,10 @@ install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/External" "${CMAKE_CURRENT_SOURCE
     DESTINATION ${CMAKE_INSTALL_PREFIX}/${MATERIALX_INSTALL_INCLUDE_PATH}/MaterialXContrib/
     FILES_MATCHING PATTERN "*.h*"
     PATTERN "MaterialXMaya/*.h*" EXCLUDE)
-
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_BUILD_TYPE}/MaterialXContrib.pdb"
         DESTINATION "${CMAKE_INSTALL_PREFIX}/${MATERIALX_INSTALL_LIB_PATH}/" OPTIONAL)
 
-add_subdirectory(MaterialXMaya)
+if (EXISTS "${MAYA_DEBUG_DIR}" OR EXISTS "${MAYA_RELEASE_DIR}")
+    add_subdirectory(MaterialXMaya)
+endif()
 add_subdirectory(libraries)

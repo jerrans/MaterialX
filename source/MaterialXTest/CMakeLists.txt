@@ -143,6 +143,12 @@ add_custom_command(TARGET MaterialXTest POST_BUILD
 	COMMAND ${CMAKE_COMMAND} -E copy_directory
 	${CMAKE_CURRENT_SOURCE_DIR}/../../resources ${CMAKE_BINARY_DIR}/bin/resources)
 
+if (MATERIALX_BUILD_GEN_ARNOLD)
+    add_custom_command(TARGET MaterialXTest POST_BUILD
+	    COMMAND ${CMAKE_COMMAND} -E copy_directory
+	    ${CMAKE_CURRENT_SOURCE_DIR}/../MaterialXGenArnold/libraries ${CMAKE_BINARY_DIR}/bin/libraries)
+endif()
+
 set_target_properties(
     MaterialXTest PROPERTIES
     OUTPUT_NAME MaterialXTest
