@@ -12,14 +12,14 @@
 #define TINYGLTF_NO_STB_IMAGE_WRITE 1
 #define TINYGLTF_NO_EXTERNAL_IMAGE 1
 
-#if defined(__GNUC__) && !defined(__clang__)
+#if defined(__GNUC__)
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wswitch"
 #endif
 
 #include <MaterialXRender/External/TinyGLTFLoader/tiny_gltf.h>
 
-#if defined(__GNUC__) && !defined(__clang__)
+#if defined(__GNUC__)
     #pragma GCC diagnostic pop
 #endif
 
