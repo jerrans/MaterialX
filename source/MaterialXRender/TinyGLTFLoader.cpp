@@ -12,7 +12,16 @@
 #define TINYGLTF_NO_STB_IMAGE_WRITE 1
 #define TINYGLTF_NO_EXTERNAL_IMAGE 1
 
+#if defined(__GNUC__) && !defined(__clang__)
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wswitch"
+#endif
+
 #include <MaterialXRender/External/TinyGLTFLoader/tiny_gltf.h>
+
+#if defined(__GNUC__) && !defined(__clang__)
+    #pragma GCC diagnostic pop
+#endif
 
 #include <iostream>
 #include <algorithm>
@@ -109,7 +118,7 @@ void computeMeshMatrices(MeshMatrixList& meshMatrices, tinygltf::Model& model, c
     }
 
     // Cache the matrix if this is a mesh
-    if (node.mesh > -1 && (node.mesh < model.meshes.size()))
+    if (node.mesh > -1 && ((size_t)node.mesh < model.meshes.size()))
     {
         tinygltf::Mesh mesh = model.meshes[node.mesh];
         Matrix44 meshMatrix = matrixStack.top();
