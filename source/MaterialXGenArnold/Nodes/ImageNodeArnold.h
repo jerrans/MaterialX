@@ -17,6 +17,7 @@ class MX_GENSHADER_API ImageNodeArnold : public SourceCodeNode
   public:
     static ShaderNodeImplPtr create();
 
+    void initialize(const InterfaceElement& element, GenContext& context);
     void addInputs(ShaderNode& node, GenContext& context) const override;
     void setValues(const Node& node, ShaderNode& shaderNode, GenContext& context) const override;
 
@@ -24,6 +25,9 @@ class MX_GENSHADER_API ImageNodeArnold : public SourceCodeNode
     // Additional colorspace argument and default "auto" value
     static string COLORSPACE;
     static string AUTO_COLORSPACE;
+
+    /// Protected constructor
+    bool _addColorSpaceArgument = false;
 };
 
 } // namespace MaterialX

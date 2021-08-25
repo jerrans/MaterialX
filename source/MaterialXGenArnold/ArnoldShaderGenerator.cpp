@@ -14,9 +14,10 @@ const string ArnoldShaderGenerator::TARGET = "arnold";
 
 
 ArnoldShaderGenerator::ArnoldShaderGenerator(bool writeImageNodeColorSpace)
-    : _writeImageNodeColorSpace(writeImageNodeColorSpace),
-      OslShaderGenerator()
+    : OslShaderGenerator(),
+      _writeImageNodeColorSpace(writeImageNodeColorSpace)
 {
+    _writeImageNodeColorSpace = true;
     const StringSet reservedWords = { "metal", "sheen", "bssrdf", "empirical_bssrdf", "randomwalk_bssrdf", 
                                       "volume_absorption", "volume_emission", "volume_henyey_greenstein", 
                                       "volume_matte" };

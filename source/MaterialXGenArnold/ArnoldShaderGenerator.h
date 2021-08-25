@@ -21,7 +21,7 @@ using ArnoldShaderGeneratorPtr = shared_ptr<class ArnoldShaderGenerator>;
 class ArnoldShaderGenerator : public OslShaderGenerator
 {
   public:
-    ArnoldShaderGenerator(bool writeImageNodeColorSpace=false);
+    ArnoldShaderGenerator(bool writeImageNodeColorSpace=true);
 
     static ShaderGeneratorPtr create(bool writeImageNodeColorSpace=false) { return std::make_shared<ArnoldShaderGenerator>(writeImageNodeColorSpace); }
 
