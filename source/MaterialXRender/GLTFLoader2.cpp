@@ -3,21 +3,26 @@
 // All rights reserved.  See LICENSE.txt for license.
 //
 
-#include <MaterialXRender/TinyGLTFLoader.h>
+#include <MaterialXRender/GLTFLoader2.h>
 #include <MaterialXCore/Util.h>
 
-// Want implementation but not image capabilities
-#define TINYGLTF_IMPLEMENTATION 1
-#define TINYGLTF_NO_STB_IMAGE 1
-#define TINYGLTF_NO_STB_IMAGE_WRITE 1
-#define TINYGLTF_NO_EXTERNAL_IMAGE 1
 
 #if defined(__GNUC__)
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wswitch"
 #endif
 
-#include <MaterialXRender/External/TinyGLTFLoader/tiny_gltf.h>
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 4996)
+#endif
+
+#define CGLTF_IMPLEMENTATION
+#include <MaterialXRender/External/cgltf/cgltf.h>
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 #if defined(__GNUC__)
     #pragma GCC diagnostic pop
@@ -35,28 +40,6 @@ namespace {
 const float MAX_FLOAT = std::numeric_limits<float>::max();
 const size_t FACE_VERTEX_COUNT = 3;
 
-uint32_t VALUE_AS_UINT32(int type, const unsigned char* value)
-{
-    switch (type)
-    {
-    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-    case TINYGLTF_COMPONENT_TYPE_BYTE:
-        return static_cast<uint32_t>(*value);
-    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-    case TINYGLTF_COMPONENT_TYPE_SHORT:
-        return static_cast<uint32_t>(*(short*)value);
-    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
-    case TINYGLTF_COMPONENT_TYPE_INT:
-        return static_cast<uint32_t>(*(int*)value);
-    case TINYGLTF_COMPONENT_TYPE_FLOAT:
-        return static_cast<uint32_t>(*(int*)value);
-    case TINYGLTF_COMPONENT_TYPE_DOUBLE:
-        return static_cast<uint32_t>(*(double*)value);
-    default:
-        return 0;
-    }
-}
-
 // List of transforms which match to model meshes
 using MeshMatrixList = std::unordered_map<size_t, Matrix44>;
 // Use to cache object-to-world transforms during traversal. 
@@ -64,144 +47,153 @@ using Matrix44Stack = std::stack<Matrix44>;
 
 const float PI = std::acos(-1.0f);
 
-// Iterate through all levels until meshes are found. For each
-// mesh cache it's object-to-world matrix
-void computeMeshMatrices(MeshMatrixList& meshMatrices, tinygltf::Model& model, const tinygltf::Node& node,
-                         Matrix44Stack& matrixStack, unsigned int debugLevel)
-{
-    std::string indent;
-    for (size_t i = 0; i < matrixStack.size(); i++)
-    {
-        indent += "\t";
-    }
-    if (debugLevel > 0)
-        std::cout << indent + "Visit node: " << node.name << std::endl;
-
-    Matrix44 matrix = Matrix44::IDENTITY;
-    if (node.matrix.size() == 16)
-    {
-        matrix = Matrix44(
-            (float)node.matrix[0], (float)node.matrix[1], (float)node.matrix[2], (float)node.matrix[3],
-            (float)node.matrix[4], (float)node.matrix[5], (float)node.matrix[6], (float)node.matrix[7],
-            (float)node.matrix[8], (float)node.matrix[9], (float)node.matrix[10], (float)node.matrix[11],
-            (float)node.matrix[12], (float)node.matrix[13], (float)node.matrix[14], (float)node.matrix[15]);
-    }
-    else
-    {
-        if (node.scale.size() == 3) {
-            Matrix44 scale = matrix.createScale({ (float)node.scale[0], (float)node.scale[1], (float)node.scale[2] });
-            matrix *= scale;
-        }
-
-        if (node.rotation.size() == 4)
-        {
-            Matrix44 rotation = Matrix44::createRotationZ((float)node.rotation[2] / 180.0f * PI) *
-                Matrix44::createRotationY((float)node.rotation[1] / 180.0f * PI) *
-                Matrix44::createRotationX((float)node.rotation[0] / 180.0f * PI);
-            matrix *= rotation;
-        }
-
-        if (node.translation.size() == 3)
-        {
-            Vector3 transVec = { (float)node.translation[0], (float)node.translation[1], (float)node.translation[2] };
-            Matrix44 translation = matrix.createTranslation(transVec);
-            translation *= translation;
-        }
-    }
-    if (matrixStack.size())
-    {
-        matrixStack.push(matrixStack.top() * matrix);
-    }
-    else
-    {
-        matrixStack.push(matrix);
-    }
-
-    // Cache the matrix if this is a mesh
-    if (node.mesh > -1 && ((size_t)node.mesh < model.meshes.size()))
-    {
-        tinygltf::Mesh mesh = model.meshes[node.mesh];
-        Matrix44 meshMatrix = matrixStack.top();
-        meshMatrices[node.mesh] = meshMatrix.getTranspose();
-        if (debugLevel > 0)
-        {
-            std::cout << indent + "Set Mesh[" + std::to_string(node.mesh) + "] = " <<
-                mesh.name << ".Matrix : \n";
-            for (size_t m = 0; m < 4; m++)
-            {
-                std::cout << indent;
-                for (size_t n = 0; n < 4; n++)
-                {
-                    std::cout << std::to_string(meshMatrix[m][n]) + " ";
-                }
-                std::cout << std::endl;
-            }
-        }
-    }
-
-    // Iterate over all children.
-    for (auto childNodeIndex: node.children)
-    {
-        computeMeshMatrices(meshMatrices, model, model.nodes[childNodeIndex], matrixStack, debugLevel);
-    }
-    
-    matrixStack.pop();
-}
-
 } // anonymous namespace
 
-bool TinyGLTFLoader::load(const FilePath& filePath, MeshList& meshList)
+#if 0
+void gltfReadFloat(const float* _floatBuffer, cgltf_size _accessorNumComponents, cgltf_size _index, cgltf_float* _out, cgltf_size _outElementSize)
 {
-	tinygltf::Model model;
-	tinygltf::TinyGLTF gltf_ctx;
-	std::string err;
-	std::string warn;
-	const std::string input_filename = filePath.asString();
+    const float* input = &_floatBuffer[_accessorNumComponents * _index];
 
-	bool store_original_json_for_extras_and_extensions = false;
-	gltf_ctx.SetStoreOriginalJSONForExtrasAndExtensions(
-		store_original_json_for_extras_and_extensions);
+    for (cgltf_size ii = 0; ii < _outElementSize; ++ii)
+    {
+        _out[ii] = (ii < _accessorNumComponents) ? input[ii] : 0.0f;
+    }
+}
+#endif
+
+bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
+{	
+	const std::string input_filename = filePath.asString();
 
 	const std::string ext = filePath.getExtension();
     const std::string BINARY_EXTENSION = "glb";
     const std::string ASCII_EXTENSION = "gltf";
 
-	bool ret = false;
+    cgltf_options options = { 0 };
+    cgltf_data* data = nullptr;
+    cgltf_result result = cgltf_result_io_error;
+
 	if (ext.compare(BINARY_EXTENSION) == 0)
 	{
 		// Try to read as binary
-		ret = gltf_ctx.LoadBinaryFromFile(&model, &err, &warn,
-			input_filename.c_str());
 	}
 	else if (ext.compare(ASCII_EXTENSION) == 0)
     {
         // Try to read as ascii
-		ret =
-			gltf_ctx.LoadASCIIFromFile(&model, &err, &warn, input_filename.c_str());
+        result = cgltf_parse_file(&options, input_filename.c_str(), &data);
 	}
 
-	if (!warn.empty() || !err.empty() || !ret)
-	{
-	    return false;
-	}
-
-    if (model.scenes.size() == 0)
+    if (result != cgltf_result_success)
     {
         return false;
     }
 
+    for (cgltf_size sceneIndex = 0; sceneIndex < data->scenes_count; ++sceneIndex)
+    {
+        cgltf_scene* scene = &data->scenes[sceneIndex];
+
+        for (cgltf_size nodeIndex = 0; nodeIndex < scene->nodes_count; ++nodeIndex)
+        {
+            cgltf_node* cnode = scene->nodes[nodeIndex];
+            if (cnode)
+            {
+                cgltf_mesh* cmesh = cnode->mesh;
+                if (cmesh)
+                {
+                    std::string meshName = cmesh->name;
+                    MeshPtr mesh = Mesh::create(meshName);
+                    if (_debugLevel > 0)
+                        std::cout << "Translate mesh: " << meshName << std::endl;
+                    meshList.push_back(mesh);
+                    mesh->setSourceUri(filePath);
+
+                    MeshStreamPtr positionStream = nullptr;
+                    MeshStreamPtr normalStream = nullptr;
+                    MeshStreamPtr texcoordStream = nullptr;
+                    MeshStreamPtr tangentStream = nullptr;
+
+                    // Get matrices
+                    float nodeToWorld[16];
+                    cgltf_node_transform_world(cnode, nodeToWorld);
+                    //float nodeToWorldNormal[16];
+                    //bx::mtxCofactor(nodeToWorldNormal, nodeToWorld);
+
+                    for (cgltf_size primitiveIndex = 0; primitiveIndex < cmesh->primitives_count; ++primitiveIndex)
+                    {
+                        cgltf_primitive* primitive = &cmesh->primitives[primitiveIndex];
+
+                        if (!primitive)
+                        {
+                            continue;
+                        }
+                        //cgltf_size vertexCount = primitive->attributes[0].data->count;
+
+                        for (cgltf_size aIndex = 0; aIndex < primitive->attributes_count; aIndex++)
+                        {
+                            cgltf_attribute* attribute = &primitive->attributes[aIndex];
+                            cgltf_accessor* accessor = attribute->data;
+                            cgltf_size accessorCount = accessor->count;
+                            cgltf_size numFloats = cgltf_accessor_unpack_floats(accessor, NULL, 0);
+
+                            std::vector<float> floatBuffer;
+                            floatBuffer.resize(numFloats);
+                            cgltf_accessor_unpack_floats(accessor, &floatBuffer[0], numFloats);
+
+                            cgltf_size vectorSize = cgltf_num_components(accessor->type);
+
+                            MeshStreamPtr geomStream = nullptr;
+                            // What is this for ? attribute->index == 0
+                            bool isPositionStream = (attribute->type == cgltf_attribute_type_position);
+                            if (isPositionStream)
+                            {
+                                // Create position stream
+                                positionStream = MeshStream::create("i_" + MeshStream::POSITION_ATTRIBUTE, MeshStream::POSITION_ATTRIBUTE, 0);
+                                geomStream = positionStream;
+                            }
+                            else if (attribute->type == cgltf_attribute_type_normal)
+                            {
+                                normalStream = MeshStream::create("i_" + MeshStream::NORMAL_ATTRIBUTE, MeshStream::NORMAL_ATTRIBUTE, 0);
+                                geomStream = normalStream;
+                            }
+                            else if (attribute->type == cgltf_attribute_type_texcoord)
+                            {
+                                texcoordStream = MeshStream::create("i_" + MeshStream::TEXCOORD_ATTRIBUTE + "_0", MeshStream::TEXCOORD_ATTRIBUTE, 0);
+
+                                if (vectorSize == 2)
+                                {
+                                    texcoordStream->setStride(MeshStream::STRIDE_2D);
+                                }
+                                geomStream = texcoordStream;
+                            }
+
+                            if (geomStream)
+                            {
+                                // Fill in stream 
+                                MeshFloatBuffer& buffer = geomStream->getData();
+
+                                for (cgltf_size v = 0; v < accessorCount; ++v)
+                                {
+                                    const float* input = &floatBuffer[vectorSize * v];
+
+                                    for (cgltf_size ii = 0; ii < 3; ++ii)
+                                    {
+                                        buffer.push_back((ii < vectorSize) ? input[ii] : 0.0f);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                }
+            }
+        }
+    }
+
+    cgltf_free(data);
+
+#if 0
     Vector3 boxMin = { MAX_FLOAT, MAX_FLOAT, MAX_FLOAT };
     Vector3 boxMax = { -MAX_FLOAT, -MAX_FLOAT, -MAX_FLOAT };
-
-    MeshMatrixList meshMatrices;
-    Matrix44Stack matrixStack;
-    matrixStack.push(Matrix44::IDENTITY);
-    int scene_to_display = model.defaultScene > -1 ? model.defaultScene : 0;
-    const tinygltf::Scene& scene = model.scenes[scene_to_display];
-    for (size_t i = 0; i < scene.nodes.size(); i++) 
-    {
-        computeMeshMatrices(meshMatrices, model, model.nodes[scene.nodes[i]], matrixStack, _debugLevel);
-    }
 
     // Load model 
     // For each gltf mesh a new mesh is created
@@ -407,6 +399,10 @@ bool TinyGLTFLoader::load(const FilePath& filePath, MeshList& meshList)
                             for (size_t v = 0; v < vectorSize; v++)
                             {
                                 float bufferData = *(floatPointer + v);
+                                if (geomStream == texcoordStream && v==1)
+                                {
+                                    bufferData = 1.0f - bufferData;
+                                }
                                 buffer.push_back(bufferData);
                                 if (_debugLevel > 1)
                                     std::cout << std::to_string(buffer[i]) + " ";
@@ -480,6 +476,7 @@ bool TinyGLTFLoader::load(const FilePath& filePath, MeshList& meshList)
         mesh->setSphereCenter(sphereCenter);
         mesh->setSphereRadius((sphereCenter - boxMin).getMagnitude());
     }
+#endif
 	return true;
 }
 
