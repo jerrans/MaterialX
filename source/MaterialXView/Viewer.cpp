@@ -10,6 +10,7 @@
 #include <MaterialXRender/TinyObjLoader.h>
 #if defined(MATERIALX_BUILD_GLTF)
 #include <MaterialXRender/GLTFLoader.h>
+#include <MaterialXRender/GLTFLoader2.h>
 #endif
 #include <MaterialXRender/Util.h>
 
@@ -341,7 +342,7 @@ void Viewer::initialize()
     _geometryHandler = mx::GeometryHandler::create();
     _geometryHandler->addLoader(loader);
 #if defined(MATERIALX_BUILD_GLTF)
-    mx::GLTFLoaderPtr gltfLoader = mx::GLTFLoader::create();
+    mx::GLTFLoader2Ptr gltfLoader = mx::GLTFLoader2::create();
     _geometryHandler->addLoader(gltfLoader);
 #endif
     loadMesh(_searchPath.find(_meshFilename));

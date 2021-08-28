@@ -50,9 +50,9 @@ const float PI = std::acos(-1.0f);
 } // anonymous namespace
 
 #if 0
-void gltfReadFloat(const float* _floatBuffer, cgltf_size _accessorNumComponents, cgltf_size _index, cgltf_float* _out, cgltf_size _outElementSize)
+void gltfReadFloat(const float* _attributeData, cgltf_size _accessorNumComponents, cgltf_size _index, cgltf_float* _out, cgltf_size _outElementSize)
 {
-    const float* input = &_floatBuffer[_accessorNumComponents * _index];
+    const float* input = &_attributeData[_accessorNumComponents * _index];
 
     for (cgltf_size ii = 0; ii < _outElementSize; ++ii)
     {
@@ -63,6 +63,7 @@ void gltfReadFloat(const float* _floatBuffer, cgltf_size _accessorNumComponents,
 
 bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
 {	
+    _debugLevel = 1;
 	const std::string input_filename = filePath.asString();
 
 	const std::string ext = filePath.getExtension();
@@ -71,19 +72,14 @@ bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
 
     cgltf_options options = { 0 };
     cgltf_data* data = nullptr;
-    cgltf_result result = cgltf_result_io_error;
 
-	if (ext.compare(BINARY_EXTENSION) == 0)
-	{
-		// Try to read as binary
-	}
-	else if (ext.compare(ASCII_EXTENSION) == 0)
-    {
-        // Try to read as ascii
-        result = cgltf_parse_file(&options, input_filename.c_str(), &data);
-	}
-
+    // Read file
+    cgltf_result result = cgltf_parse_file(&options, input_filename.c_str(), &data);
     if (result != cgltf_result_success)
+    {
+        return false;
+    }
+    if (cgltf_load_buffers(&options, data, input_filename.c_str()) != cgltf_result_success) 
     {
         return false;
     }
@@ -95,101 +91,204 @@ bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
         for (cgltf_size nodeIndex = 0; nodeIndex < scene->nodes_count; ++nodeIndex)
         {
             cgltf_node* cnode = scene->nodes[nodeIndex];
-            if (cnode)
+            if (!cnode)
             {
-                cgltf_mesh* cmesh = cnode->mesh;
-                if (cmesh)
+                continue;
+            }
+
+            cgltf_mesh* cmesh = cnode->mesh;
+            if (!cmesh)
+            {
+                continue;
+            }
+			Vector3 boxMin = { MAX_FLOAT, MAX_FLOAT, MAX_FLOAT };
+			Vector3 boxMax = { -MAX_FLOAT, -MAX_FLOAT, -MAX_FLOAT };
+
+			std::string meshName = cmesh->name;
+			MeshPtr mesh = Mesh::create(meshName);
+			if (_debugLevel > 0)
+				std::cout << "Translate mesh: " << meshName << std::endl;
+			meshList.push_back(mesh);
+			mesh->setSourceUri(filePath);
+
+			MeshStreamPtr positionStream = nullptr;
+			MeshStreamPtr normalStream = nullptr;
+            MeshStreamPtr colorStream = nullptr;
+            MeshStreamPtr texcoordStream = nullptr;
+			MeshStreamPtr tangentStream = nullptr;
+
+			// Get matrices
+			float nodeToWorld[16];
+			cgltf_node_transform_world(cnode, nodeToWorld);
+			//float nodeToWorldNormal[16];
+			//bx::mtxCofactor(nodeToWorldNormal, nodeToWorld);
+
+			for (cgltf_size primitiveIndex = 0; primitiveIndex < cmesh->primitives_count; ++primitiveIndex)
+			{
+				cgltf_primitive* primitive = &cmesh->primitives[primitiveIndex];
+
+				if (!primitive)
+				{
+					continue;
+				}
+
+				// Read indexing
+				MeshPartitionPtr part = MeshPartition::create();
+
+				cgltf_accessor* indexAccessor = primitive->indices;
+                if (!indexAccessor)
                 {
-                    std::string meshName = cmesh->name;
-                    MeshPtr mesh = Mesh::create(meshName);
-                    if (_debugLevel > 0)
-                        std::cout << "Translate mesh: " << meshName << std::endl;
-                    meshList.push_back(mesh);
-                    mesh->setSourceUri(filePath);
+                    continue;
+                }
+				size_t indexCount = indexAccessor->count;
+				size_t faceCount = indexCount / FACE_VERTEX_COUNT;
+				part->setFaceCount(faceCount);
+				part->setIdentifier(meshName);
 
-                    MeshStreamPtr positionStream = nullptr;
-                    MeshStreamPtr normalStream = nullptr;
-                    MeshStreamPtr texcoordStream = nullptr;
-                    MeshStreamPtr tangentStream = nullptr;
+				MeshIndexBuffer& indices = part->getIndices();
+                std::cout << "** Read indexing: " << std::endl;
+				for (cgltf_size i = 0; i < indexCount; i++)
+				{
+					uint32_t vertexIndex = static_cast<uint32_t>
+						(cgltf_accessor_read_index(indexAccessor, i));
+					indices.push_back(vertexIndex);
+				}
 
-                    // Get matrices
-                    float nodeToWorld[16];
-                    cgltf_node_transform_world(cnode, nodeToWorld);
-                    //float nodeToWorldNormal[16];
-                    //bx::mtxCofactor(nodeToWorldNormal, nodeToWorld);
-
-                    for (cgltf_size primitiveIndex = 0; primitiveIndex < cmesh->primitives_count; ++primitiveIndex)
+				//cgltf_size vertexCount = primitive->attributes[0].data->count;
+                // Read in vertex streams
+				for (cgltf_size prim = 0; prim < primitive->attributes_count; prim++)
+				{
+					cgltf_attribute* attribute = &primitive->attributes[prim];
+					cgltf_accessor* accessor = attribute->data;
+					if (!accessor)
+					{
+						continue;
+					}
+                    // Only load one stream of each type for now
+                    cgltf_int streamIndex = attribute->index;
+                    if (streamIndex != 0)
                     {
-                        cgltf_primitive* primitive = &cmesh->primitives[primitiveIndex];
-
-                        if (!primitive)
-                        {
-                            continue;
-                        }
-                        //cgltf_size vertexCount = primitive->attributes[0].data->count;
-
-                        for (cgltf_size aIndex = 0; aIndex < primitive->attributes_count; aIndex++)
-                        {
-                            cgltf_attribute* attribute = &primitive->attributes[aIndex];
-                            cgltf_accessor* accessor = attribute->data;
-                            cgltf_size accessorCount = accessor->count;
-                            cgltf_size numFloats = cgltf_accessor_unpack_floats(accessor, NULL, 0);
-
-                            std::vector<float> floatBuffer;
-                            floatBuffer.resize(numFloats);
-                            cgltf_accessor_unpack_floats(accessor, &floatBuffer[0], numFloats);
-
-                            cgltf_size vectorSize = cgltf_num_components(accessor->type);
-
-                            MeshStreamPtr geomStream = nullptr;
-                            // What is this for ? attribute->index == 0
-                            bool isPositionStream = (attribute->type == cgltf_attribute_type_position);
-                            if (isPositionStream)
-                            {
-                                // Create position stream
-                                positionStream = MeshStream::create("i_" + MeshStream::POSITION_ATTRIBUTE, MeshStream::POSITION_ATTRIBUTE, 0);
-                                geomStream = positionStream;
-                            }
-                            else if (attribute->type == cgltf_attribute_type_normal)
-                            {
-                                normalStream = MeshStream::create("i_" + MeshStream::NORMAL_ATTRIBUTE, MeshStream::NORMAL_ATTRIBUTE, 0);
-                                geomStream = normalStream;
-                            }
-                            else if (attribute->type == cgltf_attribute_type_texcoord)
-                            {
-                                texcoordStream = MeshStream::create("i_" + MeshStream::TEXCOORD_ATTRIBUTE + "_0", MeshStream::TEXCOORD_ATTRIBUTE, 0);
-
-                                if (vectorSize == 2)
-                                {
-                                    texcoordStream->setStride(MeshStream::STRIDE_2D);
-                                }
-                                geomStream = texcoordStream;
-                            }
-
-                            if (geomStream)
-                            {
-                                // Fill in stream 
-                                MeshFloatBuffer& buffer = geomStream->getData();
-
-                                for (cgltf_size v = 0; v < accessorCount; ++v)
-                                {
-                                    const float* input = &floatBuffer[vectorSize * v];
-
-                                    for (cgltf_size ii = 0; ii < 3; ++ii)
-                                    {
-                                        buffer.push_back((ii < vectorSize) ? input[ii] : 0.0f);
-                                    }
-                                }
-                            }
-                        }
+                        continue;
                     }
 
-                }
-            }
-        }
+					// Get data as floats
+					cgltf_size floatCount = cgltf_accessor_unpack_floats(accessor, NULL, 0);
+					std::vector<float> attributeData;
+					attributeData.resize(floatCount);
+                    floatCount = cgltf_accessor_unpack_floats(accessor, &attributeData[0], floatCount);
+
+					cgltf_size vectorSize = cgltf_num_components(accessor->type);
+					size_t desiredVectorSize = 3;
+
+					MeshStreamPtr geomStream = nullptr;
+
+					bool isPositionStream = (attribute->type == cgltf_attribute_type_position);
+					if (isPositionStream)
+					{
+						// Create position stream
+						positionStream = MeshStream::create("i_" + MeshStream::POSITION_ATTRIBUTE, MeshStream::POSITION_ATTRIBUTE, streamIndex);
+						geomStream = positionStream;
+					}
+					else if (attribute->type == cgltf_attribute_type_normal)
+					{
+						normalStream = MeshStream::create("i_" + MeshStream::NORMAL_ATTRIBUTE, MeshStream::NORMAL_ATTRIBUTE, streamIndex);
+						geomStream = normalStream;
+					}
+                    else if (attribute->type == cgltf_attribute_type_tangent)
+                    {
+                        tangentStream = MeshStream::create("i_" + MeshStream::TANGENT_ATTRIBUTE, MeshStream::TANGENT_ATTRIBUTE, streamIndex);
+                        geomStream = tangentStream;
+                    }
+                    else if (attribute->type == cgltf_attribute_type_color)
+                    {
+                        colorStream = MeshStream::create("i_" + MeshStream::COLOR_ATTRIBUTE, MeshStream::COLOR_ATTRIBUTE, streamIndex);
+                        geomStream = colorStream;
+                        if (vectorSize == 4)
+                        {
+                            desiredVectorSize = 4;
+                        }
+                    }
+                    else if (attribute->type == cgltf_attribute_type_texcoord)
+					{
+						texcoordStream = MeshStream::create("i_" + MeshStream::TEXCOORD_ATTRIBUTE + "_0", MeshStream::TEXCOORD_ATTRIBUTE, 0);
+
+						if (vectorSize == 2)
+						{
+							texcoordStream->setStride(MeshStream::STRIDE_2D);
+							desiredVectorSize = 2;
+						}
+						geomStream = texcoordStream;
+					}
+                    else
+                    {
+                        std::cout << "Unknown stream type: " << std::to_string(attribute->type)
+                            << std::endl;
+                    }
+
+					// Fill in stream 
+					if (geomStream)
+					{
+						MeshFloatBuffer& buffer = geomStream->getData();
+						cgltf_size vertexCount = accessor->count;
+
+                        std::cout << "** Read stream: " << geomStream->getName() << std::endl;
+                        std::cout << " - vertex count: " << std::to_string(vertexCount);
+                        std::cout << " - vector size: " << std::to_string(vectorSize);
+
+                        for (cgltf_size i = 0; i < vertexCount; i++)
+						{
+							const float* input = &attributeData[vectorSize * i];
+							for (cgltf_size v = 0; v < desiredVectorSize; v++)
+							{
+								// Update bounding box
+								float floatValue = (v < vectorSize) ? input[v] : 0.0f;
+								if (isPositionStream)
+								{
+									boxMin[v] = std::min(floatValue, boxMin[v]);
+									boxMax[v] = std::max(floatValue, boxMax[v]);
+								}
+								buffer.push_back(floatValue);
+							}
+						}
+					}
+				}
+
+				// Assign streams to mesh.
+				if (positionStream)
+				{
+					mesh->addStream(positionStream);
+				}
+				if (normalStream)
+				{
+					mesh->addStream(normalStream);
+				}
+				if (texcoordStream)
+				{
+					mesh->addStream(texcoordStream);
+				}
+				if (tangentStream)
+				{
+					mesh->addStream(tangentStream);
+				}
+
+				// Assign properties to mesh.
+				if (positionStream)
+				{
+					mesh->setVertexCount(positionStream->getData().size() / MeshStream::STRIDE_3D);
+				}
+				mesh->setMinimumBounds(boxMin);
+				mesh->setMaximumBounds(boxMax);
+				Vector3 sphereCenter = (boxMax + boxMin) * 0.5;
+				mesh->setSphereCenter(sphereCenter);
+				mesh->setSphereRadius((sphereCenter - boxMin).getMagnitude());
+			}
+		}
     }
 
-    cgltf_free(data);
+    if (data)
+    {
+        cgltf_free(data);
+    }
 
 #if 0
     Vector3 boxMin = { MAX_FLOAT, MAX_FLOAT, MAX_FLOAT };
@@ -381,7 +480,7 @@ bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
                 if (geomStream)
                 {
                     // Fill in stream 
-                    MeshFloatBuffer& buffer = geomStream->getData();
+                    MeshattributeData& buffer = geomStream->getData();
 
                     size_t dataCount = gAccessor.count;
                     const unsigned char* charPointer = &(gBuffer.data[byteOffset]);
