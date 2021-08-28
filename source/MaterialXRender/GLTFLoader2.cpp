@@ -58,7 +58,7 @@ void computeMeshMatrices(MeshMatrixList& meshMatrices, cgltf_node* cnode)
             (float)t[4], (float)t[5], (float)t[6], (float)t[7],
             (float)t[8], (float)t[9], (float)t[10], (float)t[11],
             (float)t[12], (float)t[13], (float)t[14], (float)t[15]);
-        meshMatrices[cmesh] = positionMatrix.getTranspose();
+		meshMatrices[cmesh] = positionMatrix; //.getTranspose();
     }
     else
     {
@@ -76,11 +76,16 @@ bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
 {	
 	const std::string input_filename = filePath.asString();
 
-	const std::string ext = filePath.getExtension();
+	const std::string ext = stringToLower(filePath.getExtension());
     const std::string BINARY_EXTENSION = "glb";
     const std::string ASCII_EXTENSION = "gltf";
+	if (ext != BINARY_EXTENSION && ext != ASCII_EXTENSION)
+	{
+		return false;
+	}
 
-    cgltf_options options = { 0 };
+    cgltf_options options;
+	std::memset(&options, 0, sizeof(options));
     cgltf_data* data = nullptr;
 
     // Read file
@@ -290,6 +295,11 @@ bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
 							for (cgltf_size v = 0; v < desiredVectorSize; v++)
 							{
 								float floatValue = (v < vectorSize) ? input[v] : 0.0f;
+								// Perform v-flip
+								if (geomStream == texcoordStream && v == 1)
+								{
+									floatValue = 1.0f - floatValue;
+								}
 								buffer.push_back(floatValue);
 							}
 						}
