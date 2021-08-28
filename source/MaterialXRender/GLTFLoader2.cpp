@@ -43,6 +43,7 @@ const size_t FACE_VERTEX_COUNT = 3;
 // List of transforms which match to meshes
 using MeshMatrixList = std::unordered_map<cgltf_mesh*, Matrix44>;
 
+// Compute matrices for each mesh. Does not support transform instancing.
 void computeMeshMatrices(MeshMatrixList& meshMatrices, cgltf_node* cnode)
 {
     std::string indent;
@@ -93,6 +94,7 @@ bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
         return false;
     }
 
+	// Precompute mesh / matrix associations
     MeshMatrixList meshMatrixList;
     for (cgltf_size sceneIndex = 0; sceneIndex < data->scenes_count; ++sceneIndex)
     {
@@ -108,6 +110,7 @@ bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
         }
     }
 
+	// Read in all meshes
 	for (size_t m = 0; m < data->meshes_count; m++)
 	{
 		cgltf_mesh* cmesh = &(data->meshes[m]);
@@ -124,11 +127,7 @@ bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
 		Vector3 boxMin = { MAX_FLOAT, MAX_FLOAT, MAX_FLOAT };
 		Vector3 boxMax = { -MAX_FLOAT, -MAX_FLOAT, -MAX_FLOAT };
 
-		std::string meshName;
-		if (cmesh->name)
-		{
-			meshName = cmesh->name;
-		}
+		std::string meshName = cmesh->name ? cmesh->name : EMPTY_STRING;
 		if (meshName.empty())
 		{
 			meshName = "generatedName_" + std::to_string(m);
@@ -158,11 +157,11 @@ bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
 			if (indexAccessor &&
 				indexAccessor->component_type != cgltf_primitive_type_triangles)
 			{
-				std::cout << "Skip non triangle indexed mesh: " << cmesh->name << std::endl;
+				if (_debugLevel > 0)
+					std::cout << "Skip non triangle indexed mesh: " << cmesh->name << std::endl;
 				continue;
 			}
 
-			//cgltf_size vertexCount = primitive->attributes[0].data->count;
 			// Read in vertex streams
 			for (cgltf_size prim = 0; prim < primitive->attributes_count; prim++)
 			{
@@ -172,7 +171,7 @@ bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
 				{
 					continue;
 				}
-				// Only load one stream of each type for now
+				// Only load one stream of each type for now.
 				cgltf_int streamIndex = attribute->index;
 				if (streamIndex != 0)
 				{
@@ -196,17 +195,20 @@ bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
 				{
 					// Create position stream
 					positionStream = MeshStream::create("i_" + MeshStream::POSITION_ATTRIBUTE, MeshStream::POSITION_ATTRIBUTE, streamIndex);
+					mesh->addStream(positionStream);
 					geomStream = positionStream;
 				}
 				else if (attribute->type == cgltf_attribute_type_normal)
 				{
 					normalStream = MeshStream::create("i_" + MeshStream::NORMAL_ATTRIBUTE, MeshStream::NORMAL_ATTRIBUTE, streamIndex);
+					mesh->addStream(normalStream);
 					geomStream = normalStream;
 					isNormalStream = true;
 				}
 				else if (attribute->type == cgltf_attribute_type_tangent)
 				{
 					tangentStream = MeshStream::create("i_" + MeshStream::TANGENT_ATTRIBUTE, MeshStream::TANGENT_ATTRIBUTE, streamIndex);
+					mesh->addStream(tangentStream);
 					geomStream = tangentStream;
 				}
 				else if (attribute->type == cgltf_attribute_type_color)
@@ -221,7 +223,7 @@ bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
 				else if (attribute->type == cgltf_attribute_type_texcoord)
 				{
 					texcoordStream = MeshStream::create("i_" + MeshStream::TEXCOORD_ATTRIBUTE + "_0", MeshStream::TEXCOORD_ATTRIBUTE, 0);
-
+					mesh->addStream(texcoordStream);
 					if (vectorSize == 2)
 					{
 						texcoordStream->setStride(MeshStream::STRIDE_2D);
@@ -331,22 +333,16 @@ bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
 				mesh->addPartition(part);
 			}
 
-			// Assign streams to mesh.
-			if (positionStream)
+			// General noramsl if none provided
+			if (!normalStream && positionStream)
 			{
-				mesh->addStream(positionStream);
+				normalStream = mesh->generateNormals(positionStream);
 			}
-			if (normalStream)
+
+			// Generate tangents if none provided
+			if (!tangentStream && texcoordStream && positionStream && normalStream)
 			{
-				mesh->addStream(normalStream);
-			}
-			if (texcoordStream)
-			{
-				mesh->addStream(texcoordStream);
-			}
-			if (tangentStream)
-			{
-				mesh->addStream(tangentStream);
+				tangentStream = mesh->generateTangents(positionStream, normalStream, texcoordStream);
 			}
 
 			// Assign properties to mesh.
