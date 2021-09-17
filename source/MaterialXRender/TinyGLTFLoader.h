@@ -3,11 +3,11 @@
 // All rights reserved.  See LICENSE.txt for license.
 //
 
-#ifndef MATERIALX_CGLTFLOADER_H
-#define MATERIALX_CGLTFLOADER_H
+#ifndef MATERIALX_TINYGLTFLOADER_H
+#define MATERIALX_TINYGLTFLOADER_H
 
 /// @file 
-/// GLTF format loader using the cgltf library
+/// GLTF geometry format loader using the TinyGLTF library
 
 #include <MaterialXRender/GeometryHandler.h>
 
@@ -15,22 +15,22 @@ namespace MaterialX
 {
 
 /// Shared pointer to a GLTFLoader
-using CGLTFLoaderPtr = std::shared_ptr<class GLTFLoader2>;
+using TinyGLTFLoaderPtr = std::shared_ptr<class TinyGLTFLoader>;
 
-/// @class CGLTFLoader
-/// Wrapper for loader to read in GLTF files using the cgltf library.
-class MX_RENDER_API CGLTFLoader : public GeometryLoader
+/// @class GLTFLoader
+/// Wrapper for geometry loader to read in GLTF files using the TinyGLTF library.
+class MX_RENDER_API TinyGLTFLoader : public GeometryLoader
 {
   public:
-    CGLTFLoader()
+    TinyGLTFLoader()
     : _debugLevel(0)
     {
         _extensions = { "glb", "GLB", "gltf", "GLTF" };
     }
-    virtual ~CGLTFLoader() { }
+    virtual ~TinyGLTFLoader() { }
 
     /// Create a new GLTFLoader
-    static CGLTFLoaderPtr create() { return std::make_shared<GLTFLoader2>(); }
+    static TinyGLTFLoaderPtr create() { return std::make_shared<TinyGLTFLoader>(); }
 
     /// Load geometry from file path
     bool load(const FilePath& filePath, MeshList& meshList) override;

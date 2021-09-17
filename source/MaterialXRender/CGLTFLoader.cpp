@@ -3,9 +3,10 @@
 // All rights reserved.  See LICENSE.txt for license.
 //
 
-#include <MaterialXRender/GLTFLoader2.h>
+#include <MaterialXRender/CGLTFLoader.h>
 #include <MaterialXCore/Util.h>
-
+#include <MaterialXCore/Node.h>
+#include <MaterialXCore/Document.h>
 
 #if defined(__GNUC__)
     #pragma GCC diagnostic push
@@ -41,10 +42,10 @@ const float MAX_FLOAT = std::numeric_limits<float>::max();
 const size_t FACE_VERTEX_COUNT = 3;
 
 // List of transforms which match to meshes
-using MeshMatrixList = std::unordered_map<cgltf_mesh*, Matrix44>;
+using GLTFMeshMatrixList = std::unordered_map<cgltf_mesh*, Matrix44>;
 
 // Compute matrices for each mesh. Does not support transform instancing.
-void computeMeshMatrices(MeshMatrixList& meshMatrices, cgltf_node* cnode)
+void computeMeshMatrices(GLTFMeshMatrixList& meshMatrices, cgltf_node* cnode)
 {
     std::string indent;
 
@@ -72,7 +73,7 @@ void computeMeshMatrices(MeshMatrixList& meshMatrices, cgltf_node* cnode)
 
 } // anonymous namespace
 
-bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
+bool CGLTFLoader::load(const FilePath& filePath, MeshList& meshList)
 {	
 	const std::string input_filename = filePath.asString();
 
@@ -100,7 +101,7 @@ bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
     }
 
 	// Precompute mesh / matrix associations
-    MeshMatrixList meshMatrixList;
+    GLTFMeshMatrixList gltfMeshMatrixList;
     for (cgltf_size sceneIndex = 0; sceneIndex < data->scenes_count; ++sceneIndex)
     {
         cgltf_scene* scene = &data->scenes[sceneIndex];
@@ -111,7 +112,7 @@ bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
             {
                 continue;
             }
-            computeMeshMatrices(meshMatrixList, cnode);
+            computeMeshMatrices(gltfMeshMatrixList, cnode);
         }
     }
 
@@ -124,9 +125,9 @@ bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
 			continue;
 		}
 		Matrix44 positionMatrix = Matrix44::IDENTITY;
-		if (meshMatrixList.find(cmesh) != meshMatrixList.end())
+		if (gltfMeshMatrixList.find(cmesh) != gltfMeshMatrixList.end())
 		{
-			positionMatrix = meshMatrixList[cmesh];
+			positionMatrix = gltfMeshMatrixList[cmesh];
 		}
 
 		Vector3 boxMin = { MAX_FLOAT, MAX_FLOAT, MAX_FLOAT };
@@ -341,6 +342,13 @@ bool GLTFLoader2::load(const FilePath& filePath, MeshList& meshList)
 					}
 				}
 				mesh->addPartition(part);
+
+				// TODO handle materials
+				cgltf_material* material = primitive->material;
+				if (material)
+				{
+
+				}
 			}
 
 			// General noramsl if none provided

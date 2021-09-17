@@ -3,7 +3,7 @@
 // All rights reserved.  See LICENSE.txt for license.
 //
 
-#include <MaterialXRender/GLTFLoader.h>
+#include <MaterialXRender/TinyGLTFLoader.h>
 #include <MaterialXCore/Util.h>
 
 // Want implementation but not image capabilities
@@ -150,7 +150,7 @@ void computeMeshMatrices(MeshMatrixList& meshMatrices, tinygltf::Model& model, c
 
 } // anonymous namespace
 
-bool GLTFLoader::load(const FilePath& filePath, MeshList& meshList)
+bool TinyGLTFLoader::load(const FilePath& filePath, MeshList& meshList)
 {
 	tinygltf::Model model;
 	tinygltf::TinyGLTF gltf_ctx;
