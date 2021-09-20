@@ -8,6 +8,10 @@
 #include <MaterialXRender/OiioImageLoader.h>
 #include <MaterialXRender/StbImageLoader.h>
 #include <MaterialXRender/TinyObjLoader.h>
+#if defined(MATERIALX_BUILD_GLTF)
+#include <MaterialXRender/TinyGLTFLoader.h>
+#include <MaterialXRender/CGLTFLoader.h>
+#endif
 #include <MaterialXRender/Util.h>
 
 #include <MaterialXGenShader/DefaultColorManagementSystem.h>
@@ -369,6 +373,10 @@ void Viewer::initialize()
     mx::TinyObjLoaderPtr loader = mx::TinyObjLoader::create();
     _geometryHandler = mx::GeometryHandler::create();
     _geometryHandler->addLoader(loader);
+#if defined(MATERIALX_BUILD_GLTF)
+    mx::CGLTFLoaderPtr gltfLoader = mx::CGLTFLoader::create();
+    _geometryHandler->addLoader(gltfLoader);
+#endif
     loadMesh(_searchPath.find(_meshFilename));
 
     // Create environment geometry handler.
@@ -623,7 +631,11 @@ void Viewer::createLoadMeshInterface(Widget* parent, const std::string& label)
     meshButton->setCallback([this]()
     {
         mProcessEvents = false;
-        std::string filename = ng::file_dialog({ { "obj", "Wavefront OBJ" } }, false);
+        std::string filename = ng::file_dialog({ { "obj", "Wavefront OBJ" },
+#if defined(MATERIALX_BUILD_GLTF)
+            { "gltf", "GLTF ASCII" }, { "glb", "GLTF Binary"} 
+#endif
+            }, false);
         if (!filename.empty())
         {
             loadMesh(filename);
@@ -1075,12 +1087,13 @@ void Viewer::updateGeometrySelections()
     {
         return;
     }
-    mx::MeshPtr mesh = _geometryHandler->getMeshes()[0];
-
+    for (auto mesh : _geometryHandler->getMeshes())
+    {
     for (size_t partIndex = 0; partIndex < mesh->getPartitionCount(); partIndex++)
     {
         mx::MeshPartitionPtr part = mesh->getPartition(partIndex);
         _geometryList.push_back(part);
+    }
     }
 
     std::vector<std::string> items;
@@ -1151,12 +1164,11 @@ void Viewer::loadMesh(const mx::FilePath& filename)
     if (_geometryHandler->loadGeometry(filename))
     {
         _meshFilename = filename;
-        const mx::MeshList& meshes = _geometryHandler->getMeshes();
-        if (!meshes.empty())
-        {
             if (_splitByUdims)
+        { 
+            for (auto mesh : _geometryHandler->getMeshes())
             {
-                meshes[0]->splitByUdims();
+                mesh->splitByUdims();
             }
         }
 
@@ -1963,6 +1975,7 @@ void Viewer::renderFrame()
             _envMaterial->bindViewInformation(envWorld, view, proj);
             _envMaterial->bindImages(_imageHandler, _searchPath, false);
             _envMaterial->drawPartition(envPart);
+            _envMaterial->unbindGeometry();
             glDisable(GL_CULL_FACE);
             glCullFace(GL_BACK);
         }
@@ -1976,6 +1989,7 @@ void Viewer::renderFrame()
     }
 
     // Opaque pass
+    const mx::MeshList& meshList = _geometryHandler->getMeshes();
     for (const auto& assignment : _materialAssignments)
     {
         mx::MeshPartitionPtr geom = assignment.first;
@@ -1991,7 +2005,17 @@ void Viewer::renderFrame()
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         }
         material->bindShader();
-        material->bindMesh(_geometryHandler->getMeshes()[0]);
+        for (auto mesh : meshList)
+        {
+            for (size_t i = 0; i < mesh->getPartitionCount(); i++)
+            {
+                if (mesh->getPartition(i) == geom)
+                {
+                    material->bindMesh(mesh);
+                    break;
+                }
+            }
+        }
         if (material->getProgram()->hasUniform(mx::HW::ALPHA_THRESHOLD))
         {
             material->getProgram()->bindUniform(mx::HW::ALPHA_THRESHOLD, mx::Value::createValue(0.99f));
@@ -2001,6 +2025,7 @@ void Viewer::renderFrame()
         material->bindImages(_imageHandler, _searchPath);
         material->drawPartition(geom);
         material->unbindImages(_imageHandler);
+        material->unbindGeometry();
         if (material->getShader()->getName() == "__WIRE_SHADER__")
         {
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -2023,7 +2048,17 @@ void Viewer::renderFrame()
             }
 
             material->bindShader();
-            material->bindMesh(_geometryHandler->getMeshes()[0]);
+            for (auto mesh : meshList)
+            {
+                for (size_t i = 0; i < mesh->getPartitionCount(); i++)
+                {
+                    if (mesh->getPartition(i) == geom)
+                    {
+                        material->bindMesh(mesh);
+                        break;
+                    }
+                }
+            }
             if (material->getProgram()->hasUniform(mx::HW::ALPHA_THRESHOLD))
             {
                 material->getProgram()->bindUniform(mx::HW::ALPHA_THRESHOLD, mx::Value::createValue(0.001f));
@@ -2033,6 +2068,7 @@ void Viewer::renderFrame()
             material->bindImages(_imageHandler, _searchPath);
             material->drawPartition(geom);
             material->unbindImages(_imageHandler);
+            material->unbindGeometry();
         }
         glDisable(GL_BLEND);
     }
@@ -2052,9 +2088,20 @@ void Viewer::renderFrame()
     {
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         _wireMaterial->bindShader();
-        _wireMaterial->bindMesh(_geometryHandler->getMeshes()[0]);
+        for (auto mesh : meshList)
+        {
+            for (size_t i = 0; i < mesh->getPartitionCount(); i++)
+            {
+                if (mesh->getPartition(i) == getSelectedGeometry())
+                {
+                    _wireMaterial->bindMesh(mesh);
+                    break;
+                }
+            }
+        }
         _wireMaterial->bindViewInformation(world, view, proj);
         _wireMaterial->drawPartition(getSelectedGeometry());
+        _wireMaterial->unbindGeometry();
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     }
 
@@ -2336,9 +2383,8 @@ bool Viewer::mouseMotionEvent(const ng::Vector2i& p,
         const mx::Matrix44& proj = _cameraViewHandler->projectionMatrix;
         mx::Matrix44 worldView = world * view;;
 
-        mx::MeshPtr mesh = _geometryHandler->getMeshes()[0];
-        mx::Vector3 boxMin = mesh->getMinimumBounds();
-        mx::Vector3 boxMax = mesh->getMaximumBounds();
+        mx::Vector3 boxMin = _geometryHandler->getMinimumBounds();
+        mx::Vector3 boxMax = _geometryHandler->getMaximumBounds();
         mx::Vector3 sphereCenter = (boxMax + boxMin) / 2.0f;
 
         float zval = ng::project(ng::Vector3f(sphereCenter.data()),
@@ -2409,15 +2455,18 @@ void Viewer::initCamera()
     {
         return;
     }
-    mx::MeshPtr mesh = _geometryHandler->getMeshes()[0];
+    const mx::Vector3& boxMax = _geometryHandler->getMaximumBounds();
+    const mx::Vector3& boxMin = _geometryHandler->getMinimumBounds();
+    mx::Vector3 sphereCenter = (boxMax + boxMin) * 0.5;
+
     mx::Matrix44 meshRotation = mx::Matrix44::createRotationZ(_meshRotation[2] / 180.0f * PI) *
                                 mx::Matrix44::createRotationY(_meshRotation[1] / 180.0f * PI) *
                                 mx::Matrix44::createRotationX(_meshRotation[0] / 180.0f * PI);
 
     if (_userCameraEnabled)
     {
-        _meshTranslation = -meshRotation.transformPoint(mesh->getSphereCenter());
-        _meshScale = IDEAL_MESH_SPHERE_RADIUS / mesh->getSphereRadius();
+        _meshTranslation = -meshRotation.transformPoint(sphereCenter);
+        _meshScale = IDEAL_MESH_SPHERE_RADIUS / (sphereCenter - boxMin).getMagnitude();
     }
 }
 
@@ -2530,13 +2579,17 @@ void Viewer::updateShadowMap()
     // Render shadow geometry.
     _shadowMaterial->unbindGeometry();
     _shadowMaterial->bindShader();
-    _shadowMaterial->bindMesh(_geometryHandler->getMeshes()[0]);
-    _shadowMaterial->bindViewInformation(world, view, proj);
-    for (const auto& assignment : _materialAssignments)
+    for (auto mesh : _geometryHandler->getMeshes())
     {
-        mx::MeshPartitionPtr geom = assignment.first;
+        _shadowMaterial->bindMesh(mesh);
+    _shadowMaterial->bindViewInformation(world, view, proj);
+        for (size_t i = 0; i < mesh->getPartitionCount(); i++)
+    {
+            mx::MeshPartitionPtr geom = mesh->getPartition(i);
         _shadowMaterial->drawPartition(geom);
     }
+    }
+    _shadowMaterial->unbindGeometry();
     _shadowMap = framebuffer->getColorImage();
 
     // Apply Gaussian blurring.
@@ -2582,7 +2635,7 @@ void Viewer::updateAlbedoTable()
     }
 
     // Create framebuffer.
-    mx::GLFrameBufferPtr framebuffer = mx::GLFramebuffer::create(ALBEDO_TABLE_SIZE, ALBEDO_TABLE_SIZE, 3, mx::Image::BaseType::FLOAT);
+    mx::GLFrameBufferPtr framebuffer = mx::GLFramebuffer::create(ALBEDO_TABLE_SIZE, ALBEDO_TABLE_SIZE, 2, mx::Image::BaseType::FLOAT);
     framebuffer->bind();
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
@@ -2629,4 +2682,5 @@ void Viewer::renderScreenSpaceQuad(MaterialPtr material)
     
     material->bindMesh(_quadMesh);
     material->drawPartition(_quadMesh->getPartition(0));
+    material->unbindGeometry();
 }
