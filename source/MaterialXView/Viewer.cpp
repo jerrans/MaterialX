@@ -1077,11 +1077,11 @@ void Viewer::updateGeometrySelections()
     }
     for (auto mesh : _geometryHandler->getMeshes())
     {
-    for (size_t partIndex = 0; partIndex < mesh->getPartitionCount(); partIndex++)
-    {
-        mx::MeshPartitionPtr part = mesh->getPartition(partIndex);
-        _geometryList.push_back(part);
-    }
+        for (size_t partIndex = 0; partIndex < mesh->getPartitionCount(); partIndex++)
+        {
+            mx::MeshPartitionPtr part = mesh->getPartition(partIndex);
+            _geometryList.push_back(part);
+        }
     }
 
     std::vector<std::string> items;
@@ -1959,17 +1959,15 @@ void Viewer::renderFrame()
         }
     }
 
-    const mx::MeshList& meshList = _geometryHandler->getMeshes();
-    if (!meshList.empty())
+    // Enable backface culling if requested.
+    if (!_renderDoubleSided)
     {
-        if (!_renderDoubleSided)
-        {
-            glEnable(GL_CULL_FACE);
-            glCullFace(GL_BACK);
-        }
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
     }
 
     // Opaque pass
+    const mx::MeshList& meshList = _geometryHandler->getMeshes();
     for (const auto& assignment : _materialAssignments)
     {
         mx::MeshPartitionPtr geom = assignment.first;
@@ -2615,7 +2613,7 @@ void Viewer::updateAlbedoTable()
     }
 
     // Create framebuffer.
-    mx::GLFrameBufferPtr framebuffer = mx::GLFramebuffer::create(ALBEDO_TABLE_SIZE, ALBEDO_TABLE_SIZE, 2, mx::Image::BaseType::FLOAT);
+    mx::GLFrameBufferPtr framebuffer = mx::GLFramebuffer::create(ALBEDO_TABLE_SIZE, ALBEDO_TABLE_SIZE, 3, mx::Image::BaseType::FLOAT);
     framebuffer->bind();
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);

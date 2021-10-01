@@ -60,7 +60,7 @@ void computeMeshMatrices(GLTFMeshMatrixList& meshMatrices, cgltf_node* cnode)
             (float)t[4], (float)t[5], (float)t[6], (float)t[7],
             (float)t[8], (float)t[9], (float)t[10], (float)t[11],
             (float)t[12], (float)t[13], (float)t[14], (float)t[15]);
-		meshMatrices[cmesh] = positionMatrix.getTranspose();
+		meshMatrices[cmesh] = positionMatrix;// .getTranspose();
     }
     else
     {
@@ -305,51 +305,51 @@ bool CGLTFLoader::load(const FilePath& filePath, MeshList& meshList)
 						}
 					}
 				}
-
-				// Read indexing
-				MeshPartitionPtr part = MeshPartition::create();
-				size_t indexCount = 0;
-				cgltf_accessor* indexAccessor = primitive->indices;
-				if (indexAccessor)
-				{
-					indexCount = indexAccessor->count;
-				}
-				else if (positionStream)
-				{
-					indexCount = positionStream->getData().size();;
-				}
-				size_t faceCount = indexCount / FACE_VERTEX_COUNT;
-				part->setFaceCount(faceCount);
-				part->setIdentifier(meshName);
-
-				MeshIndexBuffer& indices = part->getIndices();
-				if (_debugLevel > 0)
-					std::cout << "** Read indexing: Count = " << std::to_string(indexCount) << std::endl;
-				if (indexAccessor)
-				{
-					for (cgltf_size i = 0; i < indexCount; i++)
-					{
-						uint32_t vertexIndex = static_cast<uint32_t>
-							(cgltf_accessor_read_index(indexAccessor, i));
-						indices.push_back(vertexIndex);
-					}
-				}
-				else
-				{
-					for (cgltf_size i = 0; i < indexCount; i++)
-					{
-						indices.push_back(static_cast<uint32_t>(i));
-					}
-				}
-				mesh->addPartition(part);
-
-				// TODO handle materials
-				cgltf_material* material = primitive->material;
-				if (material)
-				{
-
-				}
 			}
+
+            // Read indexing
+            MeshPartitionPtr part = MeshPartition::create();
+            size_t indexCount = 0;
+            cgltf_accessor* indexAccessor = primitive->indices;
+            if (indexAccessor)
+            {
+                indexCount = indexAccessor->count;
+            }
+            else if (positionStream)
+            {
+                indexCount = positionStream->getData().size();;
+            }
+            size_t faceCount = indexCount / FACE_VERTEX_COUNT;
+            part->setFaceCount(faceCount);
+            part->setIdentifier(meshName);
+
+            MeshIndexBuffer& indices = part->getIndices();
+            if (_debugLevel > 0)
+                std::cout << "** Read indexing: Count = " << std::to_string(indexCount) << std::endl;
+            if (indexAccessor)
+            {
+                for (cgltf_size i = 0; i < indexCount; i++)
+                {
+                    uint32_t vertexIndex = static_cast<uint32_t>
+                        (cgltf_accessor_read_index(indexAccessor, i));
+                    indices.push_back(vertexIndex);
+                }
+            }
+            else
+            {
+                for (cgltf_size i = 0; i < indexCount; i++)
+                {
+                    indices.push_back(static_cast<uint32_t>(i));
+                }
+            }
+            mesh->addPartition(part);
+
+            // TODO handle materials
+            cgltf_material* material = primitive->material;
+            if (material)
+            {
+
+            }
 
 			// General noramsl if none provided
 			if (!normalStream && positionStream)
