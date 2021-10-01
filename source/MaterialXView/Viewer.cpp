@@ -19,11 +19,9 @@
 
 #include <MaterialXGenMdl/MdlShaderGenerator.h>
 #include <MaterialXGenOsl/OslShaderGenerator.h>
+#include <MaterialXGenGlsl/EsslShaderGenerator.h>
 #ifdef MATERIALX_BUILD_GEN_ARNOLD
 #include <MaterialXGenArnold/ArnoldShaderGenerator.h>
-#endif
-#ifdef MATERIALX_BUILD_GEN_ESSL
-#include <MaterialXGenEssl/EsslShaderGenerator.h>
 #endif
 
 #include <MaterialXFormat/Environ.h>
@@ -47,7 +45,7 @@ const int MIN_ENV_SAMPLES = 4;
 const int MAX_ENV_SAMPLES = 1024;
 
 const int SHADOW_MAP_SIZE = 2048;
-const int ALBEDO_TABLE_SIZE = 64;
+const int ALBEDO_TABLE_SIZE = 128;
 const int IRRADIANCE_MAP_WIDTH = 256;
 const int IRRADIANCE_MAP_HEIGHT = 128;
 
@@ -233,6 +231,7 @@ Viewer::Viewer(const std::string& materialFilename,
     _cameraViewHandler(mx::ViewHandler::create()),
     _shadowViewHandler(mx::ViewHandler::create()),
     _genContext(mx::GlslShaderGenerator::create()),
+    _genContextEssl(mx::EsslShaderGenerator::create()),
 #if MATERIALX_BUILD_GEN_OSL
     _genContextOsl(mx::OslShaderGenerator::create()),
 #endif
@@ -241,9 +240,6 @@ Viewer::Viewer(const std::string& materialFilename,
 #endif
 #if MATERIALX_BUILD_GEN_ARNOLD
     _genContextArnold(mx::ArnoldShaderGenerator::create()),
-#endif
-#if MATERIALX_BUILD_GEN_ESSL
-    _genContextEssl(mx::EsslShaderGenerator::create()),
 #endif
     _unitRegistry(mx::UnitConverterRegistry::create()),
     _splitByUdims(true),
@@ -273,33 +269,33 @@ Viewer::Viewer(const std::string& materialFilename,
     // Set the requested background color.
     setBackground(ng::Color(screenColor[0], screenColor[1], screenColor[2], 1.0f));
 
-    // Set default generator options.
+    // Set default Glsl generator options.
     _genContext.getOptions().hwDirectionalAlbedoMethod = mx::DIRECTIONAL_ALBEDO_TABLE;
     _genContext.getOptions().hwShadowMap = true;
     _genContext.getOptions().targetColorSpaceOverride = "lin_rec709";
     _genContext.getOptions().fileTextureVerticalFlip = true;
 
-    // Set OSL/MDL generator options.
+    // Set Essl generator options
+    _genContextEssl.getOptions().targetColorSpaceOverride = "lin_rec709";
+    _genContextEssl.getOptions().fileTextureVerticalFlip = false;
+    _genContextEssl.getOptions().hwMaxActiveLightSources = 1;
+    _genContextEssl.getOptions().hwSpecularEnvironmentMethod = mx::SPECULAR_ENVIRONMENT_FIS;
+    _genContextEssl.getOptions().hwDirectionalAlbedoMethod = mx::DIRECTIONAL_ALBEDO_CURVE_FIT;
+
 #if MATERIALX_BUILD_GEN_OSL
+    // Set OSL generator options.
     _genContextOsl.getOptions().targetColorSpaceOverride = "lin_rec709";
     _genContextOsl.getOptions().fileTextureVerticalFlip = false;
 #endif
 #if MATERIALX_BUILD_GEN_MDL
+    // Set MDL generator options.
     _genContextMdl.getOptions().targetColorSpaceOverride = "lin_rec709";
     _genContextMdl.getOptions().fileTextureVerticalFlip = false;
 #endif
 #if MATERIALX_BUILD_GEN_ARNOLD
     _genContextArnold.getOptions().targetColorSpaceOverride = "lin_rec709";
     _genContextArnold.getOptions().fileTextureVerticalFlip = false;
-#endif
-#if MATERIALX_BUILD_GEN_ESSL
-    _genContextEssl.getOptions().targetColorSpaceOverride = "lin_rec709";
-    _genContextEssl.getOptions().fileTextureVerticalFlip = false;
-    _genContextEssl.getOptions().hwMaxActiveLightSources = 1;
-    _genContextEssl.getOptions().hwSpecularEnvironmentMethod = mx::SPECULAR_ENVIRONMENT_FIS;
-    _genContextEssl.getOptions().hwDirectionalAlbedoMethod = mx::DIRECTIONAL_ALBEDO_CURVE_FIT;
-#endif
-    
+#endif    
 
     // Register the GLSL implementation for <viewdir> used by the environment shader.
     _genContext.getShaderGenerator().registerImplementation("IM_viewdir_vector3_" + mx::GlslShaderGenerator::TARGET, ViewDirGlsl::create);
@@ -561,9 +557,7 @@ void Viewer::applyDirectLights(mx::DocumentPtr doc)
         std::vector<mx::NodePtr> lights;
         _lightHandler->findLights(doc, lights);
         _lightHandler->registerLights(doc, lights, _genContext);
-#if MATERIALX_BUILD_GEN_ESSL
         _lightHandler->registerLights(doc, lights, _genContextEssl);
-#endif
         _lightHandler->setLightSources(lights);
     }
     catch (std::exception& e)
@@ -790,6 +784,7 @@ void Viewer::createAdvancedSettings(Widget* parent)
     {
         mProcessEvents = false;
         _genContext.getOptions().targetDistanceUnit = _distanceUnitOptions[index];
+        _genContextEssl.getOptions().targetDistanceUnit = _distanceUnitOptions[index];
 #if MATERIALX_BUILD_GEN_OSL
         _genContextOsl.getOptions().targetDistanceUnit = _distanceUnitOptions[index];
 #endif
@@ -799,9 +794,6 @@ void Viewer::createAdvancedSettings(Widget* parent)
 #if MATERIALX_BUILD_GEN_ARNOLD
         _genContextArnold.getOptions().targetDistanceUnit = _distanceUnitOptions[index];
 #endif
-#if MATERIALX_BUILD_GEN_ESSL
-        _genContextEssl.getOptions().targetDistanceUnit = _distanceUnitOptions[index];
-#endif        
         for (MaterialPtr material : _materials)
         {
             material->bindShader();
@@ -949,10 +941,8 @@ void Viewer::createAdvancedSettings(Widget* parent)
     referenceQualityBox->setCallback([this](bool enable)
     {
         _genContext.getOptions().hwDirectionalAlbedoMethod = enable ? mx::DIRECTIONAL_ALBEDO_MONTE_CARLO : mx::DIRECTIONAL_ALBEDO_TABLE;
-#if MATERIALX_BUILD_GEN_ESSL
         // No Albedo Table support for Essl yet.
         _genContextEssl.getOptions().hwDirectionalAlbedoMethod = enable ? mx::DIRECTIONAL_ALBEDO_MONTE_CARLO : mx::DIRECTIONAL_ALBEDO_CURVE_FIT;
-#endif
         reloadShaders();
     });
 
@@ -961,9 +951,7 @@ void Viewer::createAdvancedSettings(Widget* parent)
     importanceSampleBox->setCallback([this](bool enable)
     {
         _genContext.getOptions().hwSpecularEnvironmentMethod = enable ? mx::SPECULAR_ENVIRONMENT_FIS : mx::SPECULAR_ENVIRONMENT_PREFILTER;
-#if MATERIALX_BUILD_GEN_ESSL
         _genContextEssl.getOptions().hwSpecularEnvironmentMethod = _genContext.getOptions().hwSpecularEnvironmentMethod;
-#endif
         reloadShaders();
     });
 
@@ -1213,9 +1201,7 @@ void Viewer::loadDocument(const mx::FilePath& filename, mx::DocumentPtr librarie
 
     // Clear user data on the generator.
     _genContext.clearUserData();
-#if MATERIALX_BUILD_GEN_ESSL
     _genContextEssl.clearUserData();
-#endif
 
     // Clear materials if merging is not requested.
     if (!_mergeMaterials)
@@ -1337,9 +1323,7 @@ void Viewer::loadDocument(const mx::FilePath& filename, mx::DocumentPtr librarie
             {
                 // Clear cached implementations, in case libraries on the file system have changed.
                 _genContext.clearNodeImplementations();
-#if MATERIALX_BUILD_GEN_ESSL
                 _genContextEssl.clearNodeImplementations();
-#endif
 
                 mx::TypedElementPtr elem = mat->getElement();
 
@@ -1519,7 +1503,6 @@ void Viewer::saveShaderSource(mx::GenContext& context)
                     new ng::MessageDialog(this, ng::MessageDialog::Type::Information, "Saved Arnold OSL source: ", sourceFilename);
                 }
 #endif
-#if MATERIALX_BUILD_GEN_ESSL
                 else if (context.getShaderGenerator().getTarget() == mx::EsslShaderGenerator::TARGET)
                 {
                     const std::string& pixelShader = shader->getSourceCode(mx::Stage::PIXEL);
@@ -1529,7 +1512,6 @@ void Viewer::saveShaderSource(mx::GenContext& context)
                     new ng::MessageDialog(this, ng::MessageDialog::Type::Information, "Saved Essl source: ",
                         sourceFilename.asString() + "_essl_*.glsl");
                 }
-#endif
                 
             }
         }
@@ -1685,6 +1667,7 @@ void Viewer::loadStandardLibraries()
 
     // Initialize the generator contexts.
     initContext(_genContext);
+    initContext(_genContextEssl);
 #if MATERIALX_BUILD_GEN_OSL
     initContext(_genContextOsl);
 #endif
@@ -1693,9 +1676,6 @@ void Viewer::loadStandardLibraries()
 #endif
 #if MATERIALX_BUILD_GEN_ARNOLD
     initContext(_genContextArnold);
-#endif
-#if MATERIALX_BUILD_GEN_ESSL
-    initContext(_genContextEssl);
 #endif
 }
 
@@ -1768,14 +1748,12 @@ bool Viewer::keyboardEvent(int key, int scancode, int action, int modifiers)
     }
 #endif
 
-#if MATERIALX_BUILD_GEN_ESSL
     // Save Essl shader source to file.
     if (key == GLFW_KEY_E && action == GLFW_PRESS)
     {
         saveShaderSource(_genContextEssl);
         return true;
     }
-#endif
 
     // Load GLSL shader source from file.  Editing the source files before
     // loading provides a way to debug and experiment with shader source code.
@@ -1984,13 +1962,42 @@ void Viewer::renderFrame()
     const mx::MeshList& meshList = _geometryHandler->getMeshes();
     if (!meshList.empty())
     {
-        // Enable backface culling if requested.
-        if (!_renderDoubleSided)
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+    }
+
+    // Opaque pass
+    for (const auto& assignment : _materialAssignments)
+    {
+        mx::MeshPartitionPtr geom = assignment.first;
+        MaterialPtr material = assignment.second;
+        shadowState.ambientOcclusionMap = getAmbientOcclusionImage(material);
+        if (!material)
         {
             glEnable(GL_CULL_FACE);
             glCullFace(GL_BACK);
         }
 
+        if (material->getShader()->getName() == "__WIRE_SHADER__")
+        {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        }
+        material->bindShader();
+        material->bindMesh(_geometryHandler->getMeshes()[0]);
+        if (material->getProgram()->hasUniform(mx::HW::ALPHA_THRESHOLD))
+        {
+            material->getProgram()->bindUniform(mx::HW::ALPHA_THRESHOLD, mx::Value::createValue(0.99f));
+        }
+        material->bindViewInformation(world, view, proj);
+        material->bindLights(_genContext, _lightHandler, _imageHandler, lightingState, shadowState);
+        material->bindImages(_imageHandler, _searchPath);
+        material->drawPartition(geom);
+        material->unbindImages(_imageHandler);
+        if (material->getShader()->getName() == "__WIRE_SHADER__")
+        {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        }
+    }
 
         // Opaque pass
         for (const auto& assignment : _materialAssignments)
