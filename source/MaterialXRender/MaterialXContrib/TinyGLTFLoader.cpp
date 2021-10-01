@@ -3,7 +3,7 @@
 // All rights reserved.  See LICENSE.txt for license.
 //
 
-#include <MaterialXRender/TinyGLTFLoader.h>
+#include <MaterialXRender/MaterialXContrib/TinyGLTFLoader.h>
 #include <MaterialXCore/Util.h>
 
 // Want implementation but not image capabilities
@@ -17,7 +17,7 @@
     #pragma GCC diagnostic ignored "-Wswitch"
 #endif
 
-#include <MaterialXRender/External/tinygltf/tiny_gltf.h>
+#include <MaterialXRender/MaterialXContrib/External/tinygltf/tiny_gltf.h>
 
 #if defined(__GNUC__)
     #pragma GCC diagnostic pop
@@ -105,7 +105,7 @@ void computeMeshMatrices(MeshMatrixList& meshMatrices, tinygltf::Model& model, c
         {
             Vector3 transVec = { (float)node.translation[0], (float)node.translation[1], (float)node.translation[2] };
             Matrix44 translation = matrix.createTranslation(transVec);
-            translation *= translation;
+            matrix *= translation;
         }
     }
     if (matrixStack.size())

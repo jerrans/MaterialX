@@ -9,8 +9,8 @@
 #include <MaterialXRender/StbImageLoader.h>
 #include <MaterialXRender/TinyObjLoader.h>
 #if defined(MATERIALX_BUILD_GLTF)
-#include <MaterialXRender/TinyGLTFLoader.h>
-#include <MaterialXRender/CGLTFLoader.h>
+#include <MaterialXRender/MaterialXContrib/TinyGLTFLoader.h>
+#include <MaterialXRender/MaterialXContrib/CGLTFLoader.h>
 #endif
 #include <MaterialXRender/Util.h>
 

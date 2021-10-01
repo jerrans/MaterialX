@@ -3,7 +3,7 @@
 // All rights reserved.  See LICENSE.txt for license.
 //
 
-#include <MaterialXRender/CGLTFLoader.h>
+#include <MaterialXRender/MaterialXContrib/CGLTFLoader.h>
 #include <MaterialXCore/Util.h>
 #include <MaterialXCore/Node.h>
 #include <MaterialXCore/Document.h>
@@ -19,7 +19,7 @@
 #endif
 
 #define CGLTF_IMPLEMENTATION
-#include <MaterialXRender/External/cgltf/cgltf.h>
+#include <MaterialXRender/MaterialXContrib/External/cgltf/cgltf.h>
 
 #if defined(_MSC_VER)
 #pragma warning(pop)
@@ -92,7 +92,7 @@ bool CGLTFLoader::load(const FilePath& filePath, MeshList& meshList)
 
     // Read file
     cgltf_result result = cgltf_parse_file(&options, input_filename.c_str(), &data);
-    if (result != cgltf_result_success)
+    if (result != cgltf_result_success || !data)
     {
         return false;
     }
@@ -155,17 +155,10 @@ bool CGLTFLoader::load(const FilePath& filePath, MeshList& meshList)
 		{
 			cgltf_primitive* primitive = &cmesh->primitives[primitiveIndex];
 
-			if (!primitive)
-			{
-				continue;
-			}
-
-			cgltf_accessor* indexAccessor = primitive->indices;
-			if (indexAccessor &&
-				indexAccessor->component_type != cgltf_primitive_type_triangles)
+			if (!primitive || primitive->type != cgltf_primitive_type_triangles)
 			{
 				if (_debugLevel > 0)
-					std::cout << "Skip non triangle indexed mesh: " << cmesh->name << std::endl;
+					std::cout << "Skip non triangle primitive mesh: " << cmesh->name << std::endl;
 				continue;
 			}
 
@@ -316,6 +309,7 @@ bool CGLTFLoader::load(const FilePath& filePath, MeshList& meshList)
 				// Read indexing
 				MeshPartitionPtr part = MeshPartition::create();
 				size_t indexCount = 0;
+				cgltf_accessor* indexAccessor = primitive->indices;
 				if (indexAccessor)
 				{
 					indexCount = indexAccessor->count;
