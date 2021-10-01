@@ -1962,8 +1962,11 @@ void Viewer::renderFrame()
     const mx::MeshList& meshList = _geometryHandler->getMeshes();
     if (!meshList.empty())
     {
-        glEnable(GL_CULL_FACE);
-        glCullFace(GL_BACK);
+        if (!_renderDoubleSided)
+        {
+            glEnable(GL_CULL_FACE);
+            glCullFace(GL_BACK);
+        }
     }
 
     // Opaque pass
@@ -1974,8 +1977,7 @@ void Viewer::renderFrame()
         shadowState.ambientOcclusionMap = getAmbientOcclusionImage(material);
         if (!material)
         {
-            glEnable(GL_CULL_FACE);
-            glCullFace(GL_BACK);
+            continue;
         }
 
         if (material->getShader()->getName() == "__WIRE_SHADER__")
@@ -1983,7 +1985,17 @@ void Viewer::renderFrame()
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         }
         material->bindShader();
-        material->bindMesh(_geometryHandler->getMeshes()[0]);
+        for (auto mesh : meshList)
+        {
+            for (size_t i = 0; i < mesh->getPartitionCount(); i++)
+            {
+                if (mesh->getPartition(i) == geom)
+                {
+                    material->bindMesh(mesh);
+                    break;
+                }
+            }
+        }
         if (material->getProgram()->hasUniform(mx::HW::ALPHA_THRESHOLD))
         {
             material->getProgram()->bindUniform(mx::HW::ALPHA_THRESHOLD, mx::Value::createValue(0.99f));
@@ -1993,27 +2005,28 @@ void Viewer::renderFrame()
         material->bindImages(_imageHandler, _searchPath);
         material->drawPartition(geom);
         material->unbindImages(_imageHandler);
+        material->unbindGeometry();
         if (material->getShader()->getName() == "__WIRE_SHADER__")
         {
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         }
     }
 
-        // Opaque pass
+    // Transparent pass
+    if (_renderTransparency)
+    {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         for (const auto& assignment : _materialAssignments)
         {
             mx::MeshPartitionPtr geom = assignment.first;
             MaterialPtr material = assignment.second;
             shadowState.ambientOcclusionMap = getAmbientOcclusionImage(material);
-            if (!material)
+            if (!material || !material->hasTransparency())
             {
                 continue;
             }
 
-            if (material->getShader()->getName() == "__WIRE_SHADER__")
-            {
-                glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-            }
             material->bindShader();
             for (auto mesh : meshList)
             {
@@ -2028,7 +2041,7 @@ void Viewer::renderFrame()
             }
             if (material->getProgram()->hasUniform(mx::HW::ALPHA_THRESHOLD))
             {
-                material->getProgram()->bindUniform(mx::HW::ALPHA_THRESHOLD, mx::Value::createValue(0.99f));
+                material->getProgram()->bindUniform(mx::HW::ALPHA_THRESHOLD, mx::Value::createValue(0.001f));
             }
             material->bindViewInformation(world, view, proj);
             material->bindLights(_genContext, _lightHandler, _imageHandler, lightingState, shadowState);
@@ -2036,84 +2049,40 @@ void Viewer::renderFrame()
             material->drawPartition(geom);
             material->unbindImages(_imageHandler);
             material->unbindGeometry();
-            if (material->getShader()->getName() == "__WIRE_SHADER__")
+        }
+        glDisable(GL_BLEND);
+    }
+
+    if (!_renderDoubleSided)
+    {
+        glDisable(GL_CULL_FACE);
+    }
+
+    if (_srgbFrameBuffer)
+    {
+        glDisable(GL_FRAMEBUFFER_SRGB);
+    }
+
+    // Wireframe pass
+    if (_outlineSelection)
+    {
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        _wireMaterial->bindShader();
+        for (auto mesh : meshList)
+        {
+            for (size_t i = 0; i < mesh->getPartitionCount(); i++)
             {
-                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+                if (mesh->getPartition(i) == getSelectedGeometry())
+                {
+                    _wireMaterial->bindMesh(mesh);
+                    break;
+                }
             }
         }
-
-        // Transparent pass
-        if (_renderTransparency)
-        {
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            for (const auto& assignment : _materialAssignments)
-            {
-                mx::MeshPartitionPtr geom = assignment.first;
-                MaterialPtr material = assignment.second;
-                shadowState.ambientOcclusionMap = getAmbientOcclusionImage(material);
-                if (!material || !material->hasTransparency())
-                {
-                    continue;
-                }
-
-                material->bindShader();
-                for (auto mesh : meshList)
-                {
-                    for (size_t i = 0; i < mesh->getPartitionCount(); i++)
-                    {
-                        if (mesh->getPartition(i) == geom)
-                        {
-                            material->bindMesh(mesh);
-                            break;
-                        }
-                    }
-                }
-                if (material->getProgram()->hasUniform(mx::HW::ALPHA_THRESHOLD))
-                {
-                    material->getProgram()->bindUniform(mx::HW::ALPHA_THRESHOLD, mx::Value::createValue(0.001f));
-                }
-                material->bindViewInformation(world, view, proj);
-                material->bindLights(_genContext, _lightHandler, _imageHandler, lightingState, shadowState);
-                material->bindImages(_imageHandler, _searchPath);
-                material->drawPartition(geom);
-                material->unbindImages(_imageHandler);
-                material->unbindGeometry();
-            }
-            glDisable(GL_BLEND);
-        }
-
-        if (!_renderDoubleSided)
-        {
-            glDisable(GL_CULL_FACE);
-        }
-
-        if (_srgbFrameBuffer)
-        {
-            glDisable(GL_FRAMEBUFFER_SRGB);
-        }
-
-        // Wireframe pass
-        if (_outlineSelection)
-        {
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-            _wireMaterial->bindShader();
-            for (auto mesh : meshList)
-            {
-                for (size_t i = 0; i < mesh->getPartitionCount(); i++)
-                {
-                    if (mesh->getPartition(i) == getSelectedGeometry())
-                    {
-                        _wireMaterial->bindMesh(mesh);
-                        break;
-                    }
-                }
-            }
-            _wireMaterial->bindViewInformation(world, view, proj);
-            _wireMaterial->drawPartition(getSelectedGeometry());
-            _wireMaterial->unbindGeometry();
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-        }
+        _wireMaterial->bindViewInformation(world, view, proj);
+        _wireMaterial->drawPartition(getSelectedGeometry());
+        _wireMaterial->unbindGeometry();
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     }
 
     // Gamma pass
