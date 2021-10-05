@@ -234,7 +234,7 @@ bool CGLTFLoader::load(const FilePath& filePath, MeshList& meshList)
 				else
 				{
 					if (_debugLevel > 0)
-						std::cout << "Unknown stream type: " << std::to_string(attribute->type)
+						std::cout << "Stream type not read in: " << std::to_string(attribute->type)
 						<< std::endl;
 				}
 
@@ -317,7 +317,7 @@ bool CGLTFLoader::load(const FilePath& filePath, MeshList& meshList)
             }
             else if (positionStream)
             {
-                indexCount = positionStream->getData().size();;
+                indexCount = positionStream->getData().size();
             }
             size_t faceCount = indexCount / FACE_VERTEX_COUNT;
             part->setFaceCount(faceCount);
