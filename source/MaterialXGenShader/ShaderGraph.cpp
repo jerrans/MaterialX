@@ -1168,6 +1168,12 @@ void ShaderGraph::topologicalSort()
         }
     }
 
+    // In the code above, we loop over _nodeMap, which has type std::unordered_map<string, ShaderNodePtr>,
+    // and therefore the order of elements that we have now in nodeQueue depends on the implementation of
+    // std::unordered_map. Let's make the order implementation-independent by sorting nodeQueue.  
+    auto sortPredicate = [](const ShaderNode* a, const ShaderNode* b) { return a->getName() < b->getName(); };
+    std::sort(nodeQueue.begin(), nodeQueue.end(), sortPredicate);
+
     _nodeOrder.resize(_nodeMap.size(), nullptr);
     size_t count = 0;
 
@@ -1177,6 +1183,7 @@ void ShaderGraph::topologicalSort()
         ShaderNode* node = nodeQueue.front();
         nodeQueue.pop_front();
         _nodeOrder[count++] = node;
+        size_t batchStartIndex = nodeQueue.size(); // index of the first element of the new batch to come
 
         // Find connected nodes and decrease their in-degree,
         // adding node to the queue if in-degrees becomes 0.
@@ -1193,6 +1200,11 @@ void ShaderGraph::topologicalSort()
                 }
             }
         }
+
+        // In the code above, 'output->getConnections()' has type std::set<ShaderInput*>, and 
+        // therefore the order of elements that we have just added to nodeQueue is not deterministic.
+        // Let's make the order deterministic by sorting the elements in the batch.
+        std::sort(nodeQueue.begin() + batchStartIndex, nodeQueue.end(), sortPredicate);
     }
 
     // Check if there was a cycle.
